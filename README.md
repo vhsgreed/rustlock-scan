@@ -1,21 +1,41 @@
 # rustlock-scan
 
-Offline-first Cargo.lock security scanner for the 2026-08-20 Rust supply-chain
-incident, plus an online advisory cross-reference. Stdlib only (Python 3.11+,
-`tomllib`); no third-party dependencies.
+Offline-first security scanner for Rust dependency supply chains. Catches
+known-compromised crate versions **and** typosquat near-misses with an
+explainable scoring engine. Stdlib only (Python 3.11+, `tomllib`); no
+third-party dependencies. Runs anywhere, no network needed for the core scan.
 
-## scan.py — malicious-crate scan (offline)
+Built from the 2026-08-20 Rust supply-chain incident (compromised `droundy`
+account + `proc-macro1` typosquat) and generalized into a reusable defense:
+the same class of attack is how agents get poisoned via dependency trees.
 
-Flags the known typosquat/compromised crates from the 2026-08-20 `droundy`
-incident (RUSTSEC-2026-0259..0266): `arrayref 0.3.10`, `internment 0.8.7`,
-`append-only-vec 0.1.9`, and the fully-removed crates (`proc-macro1`,
-`proc-macro-en`, `arone`, `aronenao`, `tinymember`, `aovine`).
+## What it catches
+
+1. **Known compromised versions** (offline, from rustsec advisory-db
+   RUSTSEC-2026-0259..0266): `arrayref 0.3.10`, `internment 0.8.7`,
+   `append-only-vec 0.1.9`, and the fully-removed crates (`proc-macro1`,
+   `proc-macro-en`, `arone`, `aronenao`, `tinymember`, `aovine`).
+
+2. **Typosquat patterns** (scoring engine in `typosquat.py`):
+   - digit-suffix clones (`proc-macro1` vs `proc-macro2`, `tokio2`) — score 4
+   - edit-distance near-misses (`serdee`, `reqest`) — score 3 / 2
+   - separator variants (`serde-json` vs `serde_json`) — score 2
+   - legitimate derivatives (`tokio-util`, `serde_derive`, `axum-core`) are
+     allowlisted and not flagged
+
+Every hit is explainable: reason + score, so it is auditable, not a black
+box. Run `--strict` to treat typosquat warnings as errors in CI.
+
+## Usage
 
 ```sh
 python3 scan.py [path/to/Cargo.lock ...]   # defaults to ./Cargo.lock
+python3 scan.py --strict [Cargo.lock ...]  # typos = CI failure
+python3 typosquat.py serde2 tokio-util     # check individual crate names
 ```
 
-Exit 1 if any compromised version is found. No network needed.
+Exit 1 if compromised versions are found (or, with `--strict`, typosquat
+warnings); 0 otherwise.
 
 ## advisories.py — vulnerability scan (online, cacheable)
 
@@ -41,10 +61,19 @@ HIT Cargo.lock: 1 vulnerable package(s)
         -> cargo update -p h2 --precise 0.4.16
 ```
 
+## Why this matters for agents
+
+Dependency poisoning is a primary vector for compromising agent toolchains:
+CI runs fetch crates with build scripts (`proc-macro1` shipped malicious
+build.rs), and typosquats prey on the same human/agent fallibility that
+`install a package` auto-completion does. Scanning lockfiles offline before
+every build closes that door without adding a network dependency.
+
 ## Tests
 
 ```sh
-python3 -m unittest test_advisories -v
+python3 -m unittest test_typosquat   # 21 tests: real patterns + false positives
+python3 -m unittest test_advisories  # advisory-db cross-reference tests
 ```
 
 ## Usage in CI / cron

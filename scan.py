@@ -28,6 +28,8 @@ import sys
 import tomllib
 from pathlib import Path
 
+from typosquat import flagged_names
+
 # name -> (bad_versions or None=any, safe_pin)
 # bad_versions: exact versions that are compromised; None means every
 # published version of the crate is malicious (crate fully removed).
@@ -50,25 +52,6 @@ POPULAR = {
     "syn", "quote", "proc-macro2", "once_cell", "lazy_static", "regex",
     "chrono", "uuid", "serde_json", "actix-web", "tonic",
 }
-
-
-def levenshtein(a: str, b: str) -> int:
-    """Compute Levenshtein edit distance between two strings."""
-    if len(a) < len(b):
-        a, b = b, a
-    if not b:
-        return len(a)
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        curr = [i]
-        for j, cb in enumerate(b, 1):
-            curr.append(min(
-                prev[j] + 1,          # deletion
-                curr[j - 1] + 1,      # insertion
-                prev[j - 1] + (ca != cb)  # substitution
-            ))
-        prev = curr
-    return prev[-1]
 
 
 def scan_lockfile(path: Path) -> tuple[list[tuple[str, str]], list[tuple[str, str, str]]]:
@@ -98,15 +81,10 @@ def scan_lockfile(path: Path) -> tuple[list[tuple[str, str]], list[tuple[str, st
                 hits.append((name, version))
             continue  # skip typo check for known crates
 
-        # Typosquat check: skip if the name itself is popular
-        if name in POPULAR:
-            continue
-
-        # Find any popular crate within edit distance <=2
-        for popular in POPULAR:
-            if levenshtein(name, popular) <= 2:
-                typos.append((name, version, popular))
-                break  # only report the first match
+        # Typosquat check via the scoring engine (typosquat.py).
+        # flagged_names returns [(score, reason, popular)] above threshold.
+        for score, reason, popular in flagged_names(name):
+            typos.append((name, version, f"{popular} ({reason}, score {score})"))
 
     return hits, typos
 
