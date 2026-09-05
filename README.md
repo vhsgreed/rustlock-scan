@@ -82,3 +82,7 @@ python3 -m unittest test_advisories  # advisory-db cross-reference tests
 python3 scan.py Cargo.lock || echo "malware hit"
 python3 advisories.py Cargo.lock --db /var/cache/rustlock.json || echo "vulns found"
 ```
+
+## Links
+
+Part of the [vhsgreed](https://vhsgreed.win) toolset: data, code, and methods in the open.
